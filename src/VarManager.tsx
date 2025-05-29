@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react'
-import type { ChangeEvent } from 'react'
+import { useEffect, useState } from 'react'
+import type { ChangeEvent, ClipboardEvent } from 'react'
 import { v4 as uuidv4 } from 'uuid'
 
 // EnvironmentVariable is a single row in the table
@@ -9,7 +9,7 @@ type EnvironmentVariable = {
   value: string
 }
 
-const INITIAL_ROW_COUNT = 20
+const INITIAL_ROW_COUNT = 5
 const KEY_REGEX = /^[A-Za-z0-9_]+$/
 
 // createEmptyVariable is a helper function to create an empty row
@@ -40,7 +40,49 @@ export const VarManager = () => {
     setRawText(event.target.value)
   }
 
+  // Parse lines with multiple vars
+  const parseLinesToItems = (text: string) => {
+    return text
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .filter((l) => l && !l.startsWith('#'))
+      .map((l) => {
+        const idx = l.indexOf('=')
+        if (idx === -1) {
+          return { key: l, value: '' }
+        }
+        return {
+          key: l.slice(0, idx).trim(),
+          value: l.slice(idx + 1).trim(),
+        }
+      })
+  }
 
+  // onPaste handler for any row's input
+  const handleRowPaste = (
+    e: ClipboardEvent<HTMLTextAreaElement | HTMLInputElement>,
+    rowIndex: number
+  ) => {
+    const clipText = e.clipboardData.getData('text/plain')
+    if (!clipText.includes('\n')) {
+      return
+    }
+    e.preventDefault()
+
+    const items = parseLinesToItems(clipText)
+    setVariables((prev) => {
+      const next = [...prev]
+      items.forEach((it, i) => {
+        const idx = rowIndex + i
+        if (idx < next.length) {
+          next[idx] = { id: uuidv4(), key: it.key, value: it.value }
+        } else {
+          next.push({ id: uuidv4(), key: it.key, value: it.value })
+        }
+      })
+      return next
+    })
+  }
 
   // parseAndPopulate parses the raw text for env vars
   const parseAndPopulate = () => {
@@ -49,7 +91,7 @@ export const VarManager = () => {
     const lines = rawText.split('\n')
     const parsedItems: { key: string; value: string; line: number }[] = []
     const parseWarningMessages: string[] = []
-    const keyCounts: Record<string, number> = {}
+    const keyCounts: Record<string, number[]> = {}
 
     lines.forEach((line, index) => {
       const lineNum = index + 1
@@ -72,6 +114,11 @@ export const VarManager = () => {
 
       if (key) {
         parsedItems.push({ key, value, line: lineNum })
+        // Track line numbers for duplicate detection
+        if (!keyCounts[key]) {
+          keyCounts[key] = []
+        }
+        keyCounts[key].push(lineNum)
       } else {
         // Key is empty even if '=' was present
         parseWarningMessages.push(
@@ -83,10 +130,10 @@ export const VarManager = () => {
     })
 
     // Detect duplicates
-    Object.entries(keyCounts).forEach(([k, occ]) => {
-      if (occ > 1 && Array.isArray(keyCounts[k])) {
+    Object.entries(keyCounts).forEach(([k, lineNumbers]) => {
+      if (lineNumbers.length > 1) {
         parseWarningMessages.push(
-          `Duplicate key "${k}" on lines ${keyCounts[k].join(', ')}`
+          `Duplicate key "${k}" on lines ${lineNumbers.join(', ')}` // ✅ Correct!
         )
       }
     })
@@ -137,10 +184,11 @@ export const VarManager = () => {
           [id]: 'Only letters, digits, and underscore allowed.',
         }))
       } else {
-        setRowErrors((e) => ({
-          ...e,
-          [id]: `Error in ${id}`,
-        }))
+        setRowErrors((e) => {
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
+          const { [id]: _, ...rest } = e // ✅ Disable the rule for this line
+          return rest
+        })
       }
     }
   }
@@ -184,12 +232,12 @@ export const VarManager = () => {
     }
   }, [status])
 
-    useEffect(() => {
-
-  if (rawText !== '') {
-    parseAndPopulate()
-  }
-}, [rawText, parseAndPopulate])
+  useEffect(() => {
+    if (rawText !== '') {
+      parseAndPopulate()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rawText])
 
   return (
     <div className="w-full p-4 md:p-6 bg-gray-800 shadow-xl rounded-lg">
@@ -210,7 +258,6 @@ export const VarManager = () => {
       />
 
       <div className="flex flex-wrap gap-2 mb-4">
-        
         <button
           onClick={copyToClipboard}
           className="bg-blue-600 hover:bg-blue-700 px-3 py-1 rounded"
@@ -267,6 +314,7 @@ export const VarManager = () => {
                 onChange={(e) =>
                   handleVariableChange(row.id, 'key', e.target.value)
                 }
+                onPaste={(e) => handleRowPaste(e, i)}
                 className={`w-full text-sm p-1 rounded border ${
                   rowErrors[row.id]
                     ? 'border-red-500 bg-red-50'
