@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react'
-import type { ChangeEvent } from 'react'
+import { useEffect, useState } from 'react'
+import type { ChangeEvent, ClipboardEvent } from 'react'
 import { v4 as uuidv4 } from 'uuid'
 
 // EnvironmentVariable is a single row in the table
@@ -9,7 +9,7 @@ type EnvironmentVariable = {
   value: string
 }
 
-const INITIAL_ROW_COUNT = 20
+const INITIAL_ROW_COUNT = 5
 const KEY_REGEX = /^[A-Za-z0-9_]+$/
 
 // createEmptyVariable is a helper function to create an empty row
@@ -40,7 +40,49 @@ export const VarManager = () => {
     setRawText(event.target.value)
   }
 
+  // Parse lines with multiple vars
+  const parseLinesToItems = (text: string) => {
+    return text
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .filter((l) => l && !l.startsWith("#"))
+      .map((l) => {
+        const idx = l.indexOf("=")
+        if (idx === -1) {
+          return { key: l, value: "" }
+        }
+        return {
+          key: l.slice(0, idx).trim(),
+          value: l.slice(idx + 1).trim(),
+        }
+      })
+  }
 
+  // onPaste handler for any row's input
+  const handleRowPaste = (
+    e: ClipboardEvent<HTMLInputElement>,
+    rowIndex: number
+  ) => {
+    const clipText = e.clipboardData.getData("text/plain")
+    if (!clipText.includes("\n")) {
+      return
+    }
+    e.preventDefault()
+
+    const items = parseLinesToItems(clipText)
+    setVariables((prev) => {
+      const next = [...prev]
+      items.forEach((it, i) => {
+        const idx = rowIndex + i
+        if (idx < next.length) {
+          next[idx] = { id: uuidv4(), key: it.key, value: it.value }
+        } else {
+          next.push({ id: uuidv4(), key: it.key, value: it.value })
+        }
+      })
+      return next
+    })
+  }
 
   // parseAndPopulate parses the raw text for env vars
   const parseAndPopulate = () => {
@@ -252,7 +294,7 @@ export const VarManager = () => {
         Variables ({variables.length})
       </h3>
       <div className="max-h-[50vh] overflow-y-auto border p-2 rounded bg-gray-850">
-        {variables.map((row, i) => (
+       {variables.map((row, i) => (
           <div
             key={row.id}
             className="flex flex-col sm:flex-row items-start sm:items-center gap-2 mb-2"
@@ -267,6 +309,7 @@ export const VarManager = () => {
                 onChange={(e) =>
                   handleVariableChange(row.id, 'key', e.target.value)
                 }
+                onPaste={(e) => handleRowPaste(e, i)}
                 className={`w-full text-sm p-1 rounded border ${
                   rowErrors[row.id]
                     ? 'border-red-500 bg-red-50'
