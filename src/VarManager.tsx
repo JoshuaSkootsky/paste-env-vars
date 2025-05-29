@@ -45,11 +45,11 @@ export const VarManager = () => {
     return text
       .split(/\r?\n/)
       .map((l) => l.trim())
-      .filter((l) => l && !l.startsWith("#"))
+      .filter((l) => l && !l.startsWith('#'))
       .map((l) => {
-        const idx = l.indexOf("=")
+        const idx = l.indexOf('=')
         if (idx === -1) {
-          return { key: l, value: "" }
+          return { key: l, value: '' }
         }
         return {
           key: l.slice(0, idx).trim(),
@@ -60,11 +60,11 @@ export const VarManager = () => {
 
   // onPaste handler for any row's input
   const handleRowPaste = (
-    e: ClipboardEvent<HTMLInputElement>,
+    e: ClipboardEvent<HTMLTextAreaElement | HTMLInputElement>,
     rowIndex: number
   ) => {
-    const clipText = e.clipboardData.getData("text/plain")
-    if (!clipText.includes("\n")) {
+    const clipText = e.clipboardData.getData('text/plain')
+    if (!clipText.includes('\n')) {
       return
     }
     e.preventDefault()
@@ -91,7 +91,7 @@ export const VarManager = () => {
     const lines = rawText.split('\n')
     const parsedItems: { key: string; value: string; line: number }[] = []
     const parseWarningMessages: string[] = []
-    const keyCounts: Record<string, number> = {}
+    const keyCounts: Record<string, number[]> = {}
 
     lines.forEach((line, index) => {
       const lineNum = index + 1
@@ -114,6 +114,11 @@ export const VarManager = () => {
 
       if (key) {
         parsedItems.push({ key, value, line: lineNum })
+        // Track line numbers for duplicate detection
+        if (!keyCounts[key]) {
+          keyCounts[key] = []
+        }
+        keyCounts[key].push(lineNum)
       } else {
         // Key is empty even if '=' was present
         parseWarningMessages.push(
@@ -125,10 +130,10 @@ export const VarManager = () => {
     })
 
     // Detect duplicates
-    Object.entries(keyCounts).forEach(([k, occ]) => {
-      if (occ > 1 && Array.isArray(keyCounts[k])) {
+    Object.entries(keyCounts).forEach(([k, lineNumbers]) => {
+      if (lineNumbers.length > 1) {
         parseWarningMessages.push(
-          `Duplicate key "${k}" on lines ${keyCounts[k].join(', ')}`
+          `Duplicate key "${k}" on lines ${lineNumbers.join(', ')}` // ✅ Correct!
         )
       }
     })
@@ -179,10 +184,11 @@ export const VarManager = () => {
           [id]: 'Only letters, digits, and underscore allowed.',
         }))
       } else {
-        setRowErrors((e) => ({
-          ...e,
-          [id]: `Error in ${id}`,
-        }))
+        setRowErrors((e) => {
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
+          const { [id]: _, ...rest } = e // ✅ Disable the rule for this line
+          return rest
+        })
       }
     }
   }
@@ -226,12 +232,12 @@ export const VarManager = () => {
     }
   }, [status])
 
-    useEffect(() => {
-
-  if (rawText !== '') {
-    parseAndPopulate()
-  }
-}, [rawText, parseAndPopulate])
+  useEffect(() => {
+    if (rawText !== '') {
+      parseAndPopulate()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rawText])
 
   return (
     <div className="w-full p-4 md:p-6 bg-gray-800 shadow-xl rounded-lg">
@@ -252,7 +258,6 @@ export const VarManager = () => {
       />
 
       <div className="flex flex-wrap gap-2 mb-4">
-        
         <button
           onClick={copyToClipboard}
           className="bg-blue-600 hover:bg-blue-700 px-3 py-1 rounded"
@@ -294,7 +299,7 @@ export const VarManager = () => {
         Variables ({variables.length})
       </h3>
       <div className="max-h-[50vh] overflow-y-auto border p-2 rounded bg-gray-850">
-       {variables.map((row, i) => (
+        {variables.map((row, i) => (
           <div
             key={row.id}
             className="flex flex-col sm:flex-row items-start sm:items-center gap-2 mb-2"
